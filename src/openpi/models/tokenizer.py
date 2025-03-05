@@ -12,6 +12,7 @@ class PaligemmaTokenizer:
         self._max_len = max_len
 
         path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
+        # path = download.maybe_download("/storage/qiguojunLab/caojinjin/models/openpi/big_vision/paligemma_tokenizer.model")
         with path.open("rb") as f:
             self._tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
 
@@ -38,15 +39,18 @@ class PaligemmaTokenizer:
 
 class FASTTokenizer:
     def __init__(self, max_len: int = 256, fast_tokenizer_path: str = "physical-intelligence/fast"):
-        self._max_len = max_len
+        self._max_len = max_len 
 
         # Download base PaliGemma tokenizer
         path = download.maybe_download("gs://big_vision/paligemma_tokenizer.model", gs={"token": "anon"})
+        # path = download.maybe_download("/storage/qiguojunLab/caojinjin/models/openpi/big_vision/paligemma_tokenizer.model")
         with path.open("rb") as f:
             self._paligemma_tokenizer = sentencepiece.SentencePieceProcessor(model_proto=f.read())
 
         # Instantiate FAST tokenizer
-        self._fast_tokenizer = AutoProcessor.from_pretrained(fast_tokenizer_path, trust_remote_code=True)
+        # 20250212: change fast_tokenizer into abstract root 
+        # self._fast_tokenizer = AutoProcessor.from_pretrained(fast_tokenizer_path, trust_remote_code=True)
+        self._fast_tokenizer = AutoProcessor.from_pretrained("/storage/qiguojunLab/caojinjin/models/fast", trust_remote_code=True)
         self._fast_skip_tokens = 128  # Skip last 128 tokens in PaliGemma vocab since they are special tokens
 
     def tokenize(
@@ -124,4 +128,4 @@ class FASTTokenizer:
     def _act_tokens_to_paligemma_tokens(self, tokens: np.ndarray | list[int]) -> np.ndarray:
         if isinstance(tokens, list):
             tokens = np.array(tokens)
-        return self._paligemma_tokenizer.vocab_size() - 1 - self._fast_skip_tokens - tokens
+        return self._paligemma_tokenizer.vocab_size() - 1 - self._fast_skip_tokens - tokens#

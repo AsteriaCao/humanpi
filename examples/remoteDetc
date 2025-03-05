@@ -1,0 +1,228 @@
+import cv2
+import numpy as np
+import cv2.aruco as aruco
+import math
+from scipy import signal
+
+# calibration_file = np.load('camera_params.npz')
+# intrinsic_camera = calibration_file['mtx']
+# distortion = calibration_file['dist']
+
+cx = 655.3664
+cy = 367.5246
+fx = 971.2252
+fy = 970.7470
+k1 = 0.0097
+k2 = -0.00745
+k3 = 0.00
+p1 = 0.00
+p2 = 0.00
+
+
+class RemoteDetector(object):
+
+    def __init__(self,  marker_len=0.015, camera_id=1):
+        self._camera_id = camera_id
+        if camera_id is not None: self._camera_id = camera_id
+        self.camera = cv2.VideoCapture(self._camera_id)
+        self.camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        self.camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        self._marker_len = marker_len
+        # self._camera_matrix = intrinsic_camera  # 3x3 camera intrinsic matrix
+        # self._camera_dist = distortion  # vector of distortion coefficients
+        self._camera_matrix = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])  # 3x3 camera intrinsic matrix
+        self._camera_dist = np.array([k1, k2, p1, p2, k3])  # vector of distortion coefficients
+
+        self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+        self.parameters = cv2.aruco.DetectorParameters()
+        self.parameters.cornerRefinementMethod = aruco.CORNER_REFINE_CONTOUR
+        self.parameters.adaptiveThreshConstant = 2
+        self.last_pose = np.zeros(6)  # record the pose of marker from last frame
+        self.last_ori = np.zeros([2, 3])
+        self.pose_data_set = np.zeros([50, 6])
+        self._avg_queue = np.zeros([15, 3])
+        self._med_queue = np.zeros([7, 3])
+        self.detc_confirm = False
+        self.record = False
+        self.quit = False
+        self.reflec_mat = np.array([[0, 1, 0], [-1, 0, 0], [0, 0, 1]])
+        self.reflec_mat2 = np.array([[0, 1, 0], [1, 0, 0], [0, 0, 1]])
+
+    
+    
+    def _ori_estimator(self, pose):
+        '''judge if the orientation of z-axis of marker is correct'''
+        rot = self._rotation_mat(pose[3:6])
+        jerk = False
+
+        for i, r in enumerate(pose[3:6]):
+            if abs(r - self.last_pose[i + 3]) > np.pi / 2 and self._detc_confirm == True:
+                jerk = True
+                # print(jerk)
+
+        if rot[2, 2] > 0:
+            jerk = True
+
+        return jerk
+
+    def _rotation_mat(self, rvec):
+        '''output the rotation matrix from the rotation angle of a marker'''
+        rz = rvec[2]
+        ry = rvec[1]
+        rx = rvec[0]
+        rot_z = np.array([[np.cos(rz), np.sin(rz), 0], [-np.sin(rz), np.cos(rz), 0], [0, 0, 1]])
+        rot_y = np.array([[np.cos(ry), 0, -np.sin(ry)], [0, 1, 0], [np.sin(ry), 0, np.cos(ry)]])
+        rot_x = np.array([[1, 0, 0], [0, np.cos(rx), np.sin(rx)], [0, -np.sin(rx), np.cos(rx)]])
+        rot_mat = rot_x.dot(rot_y)
+        rot_mat = rot_mat.dot(rot_z)
+        return rot_mat
+
+    def _medfilt(self, vec):
+        med_vec = np.zeros([1, 3])
+
+        self._med_queue[6] = vec
+        for i in range(3):
+            med_vec[0, i] = signal.medfilt(self._med_queue[:, i], 7)[0]
+        self._med_queue[0:6:] = self._med_queue[1:7, :]
+        return med_vec
+
+    def _action_modifier(self, action, enlarge):
+        '''filter the noise of action order and amplify the input action'''
+        for i, angle in enumerate(action[3:6]):
+            if abs(angle) >= np.pi:
+                action[i + 3] = angle - 2 * np.pi * (angle / abs(angle))
+
+        action[0:3] = self._avg_filter(action[0:3])
+        # print("raw angle:", action[3:6])
+
+        action[3:6] = self._medfilt(action[3:6])
+        try:
+            action[6] = self._grip_control(3, 5)
+        except:
+            action[6] = 1
+        action[0:3] *= enlarge
+        return action
+
+    def _avg_filter(self, pose_data):
+        length = self._avg_queue.shape[0]
+        avg_pose = np.zeros(len(pose_data))
+        # print('avg_pose: ', avg_pose)
+        # print('queue0: ', self._avg_queue[0])
+        if sum(self._avg_queue).all == 0:
+            for i in range(length):
+                self._avg_queue[i, :] = pose_data
+        else:
+            # print('pose_data', pose_data)
+            self._avg_queue[0] = pose_data
+            self._avg_queue[1:length] = self._avg_queue[0:length - 1]
+        for i in range(len(pose_data)):
+            avg_pose[i] = sum(self._avg_queue[:, i]) / length
+        return avg_pose
+
+    def _grip_control(self, m1, m2):
+        dist = np.sqrt(sum((self.pose_data[m1][0:3] - self.pose_data[m2][0:3]) ** 2))
+        print(dist)
+        if dist > 0.08:
+            return -1
+        else:
+            return 1
+
+    def _detect_marker(self):
+        '''detect aruco markers and calculate poses '''
+        kernel3 = np.ones((5, 5), np.float32) / 25
+
+        ret, frame = self.camera.read()
+
+        # Convert the frame to grayscale
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.filter2D(gray, -1, kernel3)
+
+        # Detect the markers in the frame
+        corners, ids, _ = cv2.aruco.detectMarkers(gray, self.aruco_dict, parameters=self.parameters)
+
+        # Draw the detected markers on the frame
+        cv2.aruco.drawDetectedMarkers(frame, corners, ids)
+        self.pose_data = dict()
+
+        # Estimate the 6D pose of the marker if it is present
+        if ids is not None:
+            rvecs, tvecs, _ = cv2.aruco.estimatePoseSingleMarkers(corners, self._marker_len,
+                                                                  self._camera_matrix, self._camera_dist)
+            for index, rvec in enumerate(rvecs):
+                cv2.drawFrameAxes(frame, self._camera_matrix, self._camera_dist, rvec, tvecs[index], self._marker_len)
+
+            for i, tvec in enumerate(tvecs):
+                self.pose_data[ids[i][0]] = np.append(tvec, rvecs[i])
+
+        cv2.drawFrameAxes(frame, self._camera_matrix, self._camera_dist, self.last_pose[3:6], self.last_pose[0:3],
+                          self._marker_len)
+
+        frame = cv2.flip(frame, 1)
+        cv2.imshow("Camera View", frame)
+       
+        key = cv2.waitKey(1)
+        if key == ord('r'):
+            self.detc_confirm = False
+        elif key == ord('s'):
+            self.record = not self.record
+        elif key == ord('q'):
+            self.quit = True
+
+    def single_gripper_control(self, enlarge=1.3,rotation=False):
+        self._detect_marker()
+        action = np.zeros(7)
+        current_pose = np.zeros(6)
+        det_num = 0
+        for key in self.pose_data:
+
+            if key == 3:
+                det_num += 1
+            if key == 5:
+                det_num += 1
+        if det_num == 2:
+
+            current_pose[0:3] = (self.pose_data[3][0:3] + self.pose_data[5][0:3]) / 2
+            current_pose[3:6] = self.pose_data[3][3:6]
+            # print('current_pose:', current_pose)
+
+            if self.detc_confirm:
+                # print('confrim')
+
+                action[0:3] = self.last_pose[0:3] - current_pose[0:3]
+                action[3:6] = current_pose[3:6]
+                action[4] += np.pi * 0.75
+                # print('action:', action)
+                action = self._action_modifier(action, enlarge)
+            else:
+                self.detc_confirm = True
+            self.last_pose = current_pose
+        else:
+            self.detc_confirm = False
+
+        action[0:3] = action[0:3].dot(self.reflec_mat)
+        action[3:6] = action[3:6].dot(self.reflec_mat2)
+        if rotation is False:
+            action[3:6] = 0
+        else:
+            action[3:6] = action[3:6] * 0.1
+        return action
+
+    def single_marker_control(self, tag_id, marker_len, rotation=False):
+        '''return the variation of the target marker's pose'''
+        self._marker_len = marker_len
+        self._detect_marker()
+
+        action = np.zeros(7)
+        for key in self.pose_data:
+            if key == tag_id:
+                action[0:6] = self.last_pose - self.pose_data[key]
+                self.last_pose = self.pose_data[key]
+
+        action = self._action_modifier(action)
+        action[0:3] = action[0:3].dot(self.reflec_mat)
+
+        action[3:6] = action[3:6].dot(self.reflec_mat)
+        if rotation is False:
+            action[3:6] = 0
+        return action
+ 

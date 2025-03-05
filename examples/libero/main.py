@@ -32,7 +32,7 @@ class Args:
     # LIBERO environment-specific parameters
     #################################################################################################################
     task_suite_name: str = (
-        "libero_spatial"  # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
+        "libero_90"  # Task suite. Options: libero_spatial, libero_object, libero_goal, libero_10, libero_90
     )
     num_steps_wait: int = 10  # Number of steps to wait for objects to stabilize i n sim
     num_trials_per_task: int = 50  # Number of rollouts per task
@@ -40,7 +40,7 @@ class Args:
     #################################################################################################################
     # Utils
     #################################################################################################################
-    video_out_path: str = "data/libero/videos"  # Path to save videos
+    video_out_path: str = f"data/libero/videos/{task_suite_name.split('_')[-1]}"  # Path to save videos
 
     seed: int = 7  # Random Seed (for reproducibility)
 
@@ -132,9 +132,9 @@ def eval_libero(args: Args) -> None:
                             "observation/wrist_image": wrist_img,
                             "observation/state": np.concatenate(
                                 (
-                                    obs["robot0_eef_pos"],
-                                    _quat2axisangle(obs["robot0_eef_quat"]),
-                                    obs["robot0_gripper_qpos"],
+                                    obs["robot0_eef_pos"],                      #(3,)
+                                    _quat2axisangle(obs["robot0_eef_quat"]),    #(4,) -> (3,)
+                                    obs["robot0_gripper_qpos"],                 #(2,)
                                 )
                             ),
                             "prompt": str(task_description),
@@ -146,11 +146,10 @@ def eval_libero(args: Args) -> None:
                             len(action_chunk) >= args.replan_steps
                         ), f"We want to replan every {args.replan_steps} steps, but policy only predicts {len(action_chunk)} steps."
                         action_plan.extend(action_chunk[: args.replan_steps])
-
                     action = action_plan.popleft()
-
                     # Execute action in environment
                     obs, reward, done, info = env.step(action.tolist())
+                    import pdb; pdb.set_trace()
                     if done:
                         task_successes += 1
                         total_successes += 1

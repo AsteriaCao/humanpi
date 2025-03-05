@@ -47,8 +47,8 @@ class Policy(BasePolicy):
 
         self._rng, sample_rng = jax.random.split(self._rng)
         outputs = {
-            "state": inputs["state"],
-            "actions": self._sample_actions(sample_rng, _model.Observation.from_dict(inputs), **self._sample_kwargs),
+            "state": inputs["state"], # (1, 8)
+            "actions": self._sample_actions(sample_rng, _model.Observation.from_dict(inputs), **self._sample_kwargs), # (1, 256)
         }
 
         # Unbatch and convert to np.ndarray.

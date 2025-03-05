@@ -47,7 +47,7 @@ class LiberoInputs(transforms.DataTransformFn):
         wrist_image = _parse_image(data["observation/wrist_image"])
 
         inputs = {
-            "state": state,
+            "state": state, #(8, )
             "image": {
                 "base_0_rgb": base_image,
                 "left_wrist_0_rgb": wrist_image,
@@ -69,7 +69,6 @@ class LiberoInputs(transforms.DataTransformFn):
 
         if "prompt" in data:
             inputs["prompt"] = data["prompt"]
-
         return inputs
 
 

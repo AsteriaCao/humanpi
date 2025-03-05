@@ -88,7 +88,7 @@ class DataConfig:
     prompt_from_task: bool = False
 
     # If true, will disable syncing the dataset from the Hugging Face Hub. Allows training on local-only datasets.
-    local_files_only: bool = False
+    local_files_only: bool = True # 20250212: change the params to True to avoid downloading from Hugging Face Hub 
 
 
 class GroupFactory(Protocol):
@@ -361,7 +361,17 @@ class TrainConfig:
     @property
     def assets_dirs(self) -> pathlib.Path:
         """Get the assets directory for this config."""
-        return (pathlib.Path(self.assets_base_dir) / self.name).resolve()
+        # 20250212: ckpt and example data root is root_dir. 
+        root_dir = pathlib.Path('/storage/qiguojunLab/caojinjin/models/openpi/openpi-assets/checkpoints/') / self.name
+        relative_dir = root_dir / pathlib.Path(self.assets_base_dir) 
+        
+        # subdirectories = [subdir for subdir in relative_dir.iterdir() if subdir.is_dir()]
+        # num_subdirectories = len(subdirectories)
+        
+        # assert num_subdirectories == 1, f"Example data in {relative_dir} is more than 1!"
+
+        return relative_dir
+        # return (pathlib.Path(self.assets_base_dir) / self.name).resolve()
 
     @property
     def checkpoint_dir(self) -> pathlib.Path:
@@ -446,9 +456,9 @@ _CONFIGS = [
         name="pi0_libero",
         model=pi0.Pi0Config(),
         data=LeRobotLiberoDataConfig(
-            repo_id="physical-intelligence/libero",
+            repo_id="libero",
             base_config=DataConfig(
-                local_files_only=False,  # Set to True for local-only datasets.
+                local_files_only=True,  # Set to True for local-only datasets.
                 prompt_from_task=True,
             ),
         ),
@@ -459,9 +469,9 @@ _CONFIGS = [
         name="pi0_libero_low_mem_finetune",
         model=pi0.Pi0Config(paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"),
         data=LeRobotLiberoDataConfig(
-            repo_id="physical-intelligence/libero",
+            repo_id="libero",
             base_config=DataConfig(
-                local_files_only=False,  # Set to True for local-only datasets.
+                local_files_only=True,  # Set to True for local-only datasets.
                 prompt_from_task=True,
             ),
         ),
@@ -476,9 +486,9 @@ _CONFIGS = [
         name="pi0_fast_libero",
         model=pi0_fast.Pi0FASTConfig(action_dim=7, action_horizon=10, max_token_len=180),
         data=LeRobotLiberoDataConfig(
-            repo_id="physical-intelligence/libero",
+            repo_id="libero",
             base_config=DataConfig(
-                local_files_only=False,  # Set to True for local-only datasets.
+                local_files_only=True,  # Set to True for local-only datasets.
                 prompt_from_task=True,
             ),
         ),
@@ -489,9 +499,9 @@ _CONFIGS = [
         name="pi0_fast_libero_low_mem_finetune",
         model=pi0_fast.Pi0FASTConfig(paligemma_variant="gemma_2b_lora"),
         data=LeRobotLiberoDataConfig(
-            repo_id="physical-intelligence/libero",
+            repo_id="libero",
             base_config=DataConfig(
-                local_files_only=False,  # Set to True for local-only datasets.
+                local_files_only=True,  # Set to True for local-only datasets.
                 prompt_from_task=True,
             ),
         ),

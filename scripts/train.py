@@ -54,12 +54,14 @@ def init_wandb(config: _config.TrainConfig, *, resuming: bool, log_code: bool = 
     ckpt_dir = config.checkpoint_dir
     if not ckpt_dir.exists():
         raise FileNotFoundError(f"Checkpoint directory {ckpt_dir} does not exist.")
+    # 20250217: wandb must offline when in H group
     if resuming:
         run_id = (ckpt_dir / "wandb_id.txt").read_text().strip()
-        wandb.init(id=run_id, resume="must", project=config.project_name)
+        wandb.init(id=run_id, mode='offline', resume="must", project=config.project_name)
     else:
         wandb.init(
             name=config.exp_name,
+            mode='offline',
             config=dataclasses.asdict(config),
             project=config.project_name,
         )
