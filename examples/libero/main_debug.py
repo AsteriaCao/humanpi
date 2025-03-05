@@ -160,7 +160,7 @@ def eval_libero(args: Args) -> None:
                     point = obs['robot0_eef_pos']
                     camera_name = "robot0_eye_in_hand"
                     # camera_name = "agentview"
-                    suffix = f"{camera_name}_forward_correct_inverse_2nd_depthmap_2_inverse"
+                    suffix = f"{camera_name}_forward_correct_inverse_depth_correct"
                     # path = f"/storage/qiguojunLab/caojinjin/codes/openpi/dataloader/data/image_inverse_agentview_1_{t}.png"
                     tmp_img = np.ascontiguousarray(obs[f"{camera_name}_image"][::-1, ::-1])
 
